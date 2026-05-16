@@ -40,9 +40,6 @@
 
 Open `http://localhost:8000` to start tracking!
 
-## Contributing
-
-Contributions are welcome. Feel free to open an **Issue** or submit a **Pull Request** for suggestions and improvements.
 
 ## License
 
