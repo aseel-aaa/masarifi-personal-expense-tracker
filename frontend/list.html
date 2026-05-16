@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>كل المصاريف - مصاريفي</title>
+    <meta name="description" content="عرض وإدارة جميع مصاريفك الشخصية">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span>💰</span>
+            <span>مصاريفي</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">📊 لوحة التحكم</a></li>
+            <li><a href="list.html" class="active">📋 المصاريف</a></li>
+            <li><a href="add.html">➕ إضافة مصروف</a></li>
+            <li><a href="reports.html">📈 التقارير</a></li>
+            <li style="margin-top: auto;"><a href="#" onclick="logout()">🚪 تسجيل الخروج</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <h1 style="margin-bottom: 0.25rem;">كل المصاريف 📋</h1>
+                <p style="color: var(--text-muted); font-size: 0.9rem;" id="expenses-count"></p>
+            </div>
+            <a href="add.html" class="btn btn-primary">➕ إضافة جديد</a>
+        </div>
+
+        <!-- Search & Filter -->
+        <div class="card" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem;">
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                <input type="text" id="search-input" placeholder="🔍 ابحث في المصاريف..." style="flex: 1; min-width: 200px; background: rgba(20,20,40,0.4); border: 1px solid var(--border);">
+                <select id="filter-category" style="width: 160px; background: rgba(20,20,40,0.4);">
+                    <option value="">كل الفئات</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card" id="table-card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>الفئة</th>
+                        <th>الوصف</th>
+                        <th>المبلغ</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="expenses-list">
+                    <!-- Skeleton loading -->
+                    <tr><td colspan="5">
+                        <div class="skeleton skeleton-text" style="width: 100%;"></div>
+                        <div class="skeleton skeleton-text" style="width: 85%; margin-top: 12px;"></div>
+                        <div class="skeleton skeleton-text" style="width: 90%; margin-top: 12px;"></div>
+                        <div class="skeleton skeleton-text" style="width: 75%; margin-top: 12px;"></div>
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="empty-state" style="display: none;">
+            <div class="card">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>لا توجد مصاريف بعد</p>
+                    <a href="add.html" class="btn btn-primary">➕ أضف أول مصروف</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(8px); z-index:100; align-items:center; justify-content:center;">
+        <div class="card" style="max-width: 400px; width: 90%; text-align: center; animation: scaleIn 0.3s ease-out;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🗑️</div>
+            <h3 style="margin-bottom: 0.5rem;">حذف المصروف</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1.75rem;">هل أنت متأكد من حذف هذا المصروف؟<br>لا يمكن التراجع عن هذا الإجراء.</p>
+            <div style="display: flex; gap: 0.75rem; justify-content: center;">
+                <button class="btn" id="cancel-delete" style="background: rgba(255,255,255,0.06); color: var(--text-main); border: 1px solid var(--border); min-width: 100px;">إلغاء</button>
+                <button class="btn" id="confirm-delete" style="background: linear-gradient(135deg, #f87171, #ef4444); color: white; min-width: 100px; box-shadow: 0 4px 15px var(--danger-glow);">حذف</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "http://localhost:8000";
+        const token = localStorage.getItem('token');
+        let allExpenses = [];
+        let deleteTargetId = null;
+
+        if (!token) window.location.href = 'login.html';
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast toast-${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Load categories for filter
+        async function loadFilterCategories() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/categories/`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const categories = await res.json();
+                const select = document.getElementById('filter-category');
+                categories.forEach(cat => {
+                    const opt = document.createElement('option');
+                    opt.value = cat.name;
+                    opt.textContent = `${cat.icon} ${cat.name}`;
+                    select.appendChild(opt);
+                });
+            } catch(e) {}
+        }
+
+        function renderExpenses(expenses) {
+            const tbody = document.getElementById('expenses-list');
+            const tableCard = document.getElementById('table-card');
+            const emptyState = document.getElementById('empty-state');
+            const countEl = document.getElementById('expenses-count');
+
+            countEl.textContent = `${expenses.length} مصروف`;
+
+            if (expenses.length === 0) {
+                tableCard.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            tableCard.style.display = 'block';
+            emptyState.style.display = 'none';
+
+            tbody.innerHTML = expenses.map((exp, i) => `
+                <tr style="animation-delay: ${i * 0.04}s;">
+                    <td style="white-space: nowrap;">${new Date(exp.date).toLocaleDateString('ar-SA')}</td>
+                    <td><span class="badge badge-category">${exp.category_icon || '📁'} ${exp.category_name || 'غير محدد'}</span></td>
+                    <td style="color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${exp.description || '—'}</td>
+                    <td><span class="amount-display">${exp.amount.toFixed(2)} <span class="currency">${exp.currency || 'USD'}</span></span></td>
+                    <td>
+                        <button class="btn-delete" onclick="openDeleteModal('${exp._id}')">🗑️ حذف</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadExpenses() {
+            const res = await fetch(`${API_BASE_URL}/expenses/`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            allExpenses = await res.json();
+            renderExpenses(allExpenses);
+        }
+
+        // Search & Filter
+        function applyFilters() {
+            const search = document.getElementById('search-input').value.toLowerCase();
+            const category = document.getElementById('filter-category').value;
+            
+            let filtered = allExpenses;
+            
+            if (search) {
+                filtered = filtered.filter(exp => 
+                    (exp.description || '').toLowerCase().includes(search) ||
+                    (exp.category_name || '').toLowerCase().includes(search) ||
+                    exp.amount.toString().includes(search)
+                );
+            }
+            
+            if (category) {
+                filtered = filtered.filter(exp => exp.category_name === category);
+            }
+            
+            renderExpenses(filtered);
+        }
+
+        document.getElementById('search-input').addEventListener('input', applyFilters);
+        document.getElementById('filter-category').addEventListener('change', applyFilters);
+
+        // Delete modal
+        function openDeleteModal(id) {
+            deleteTargetId = id;
+            const modal = document.getElementById('delete-modal');
+            modal.style.display = 'flex';
+        }
+
+        document.getElementById('cancel-delete').addEventListener('click', () => {
+            document.getElementById('delete-modal').style.display = 'none';
+            deleteTargetId = null;
+        });
+
+        document.getElementById('delete-modal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                e.currentTarget.style.display = 'none';
+                deleteTargetId = null;
+            }
+        });
+
+        document.getElementById('confirm-delete').addEventListener('click', async () => {
+            if (!deleteTargetId) return;
+            const btn = document.getElementById('confirm-delete');
+            btn.textContent = '⏳ جاري الحذف...';
+            btn.style.pointerEvents = 'none';
+            
+            try {
+                const res = await fetch(`${API_BASE_URL}/expenses/${deleteTargetId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    document.getElementById('delete-modal').style.display = 'none';
+                    showToast('✅ تم حذف المصروف بنجاح');
+                    await loadExpenses();
+                }
+            } catch(e) {
+                showToast('❌ حدث خطأ أثناء الحذف', 'error');
+            }
+            
+            btn.textContent = 'حذف';
+            btn.style.pointerEvents = 'auto';
+            deleteTargetId = null;
+        });
+
+        loadExpenses();
+        loadFilterCategories();
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        }
+    </script>
+</body>
+</html>

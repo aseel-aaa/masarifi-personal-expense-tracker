@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إضافة مصروف - مصاريفي</title>
+    <meta name="description" content="أضف مصروف جديد لتتبع نفقاتك">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span>💰</span>
+            <span>مصاريفي</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">📊 لوحة التحكم</a></li>
+            <li><a href="list.html">📋 المصاريف</a></li>
+            <li><a href="add.html" class="active">➕ إضافة مصروف</a></li>
+            <li><a href="reports.html">📈 التقارير</a></li>
+            <li style="margin-top: auto;"><a href="#" onclick="logout()">🚪 تسجيل الخروج</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <h1>إضافة مصروف جديد ✨</h1>
+        
+        <div class="card" style="max-width: 600px;">
+            <form id="add-form">
+                <div class="form-group">
+                    <label>💵 المبلغ</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="number" id="amount" step="any" min="0" required placeholder="0.00" inputmode="decimal" autocomplete="off" style="flex: 1;">
+                        <select id="currency" style="width: 110px;">
+                            <option value="USD">USD ($)</option>
+                            <option value="ILS">ILS (₪)</option>
+                            <option value="JOD">JOD</option>
+                            <option value="EGP">EGP</option>
+                            <option value="SAR">SAR</option>
+                            <option value="AED">AED</option>
+                            <option value="KWD">KWD</option>
+                            <option value="BHD">BHD</option>
+                            <option value="OMR">OMR</option>
+                            <option value="QAR">QAR</option>
+                            <option value="LBP">LBP</option>
+                            <option value="SYP">SYP</option>
+                            <option value="IQD">IQD</option>
+                            <option value="LYD">LYD</option>
+                            <option value="TND">TND</option>
+                            <option value="DZD">DZD</option>
+                            <option value="MAD">MAD</option>
+                            <option value="SDG">SDG</option>
+                            <option value="YER">YER</option>
+                            <option value="SOS">SOS</option>
+                            <option value="DJF">DJF</option>
+                            <option value="KMF">KMF</option>
+                            <option value="MRU">MRU</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>📁 الفئة</label>
+                    <select id="category" required>
+                        <option value="">اختر الفئة</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>📅 التاريخ</label>
+                    <input type="date" id="date" required>
+                </div>
+                <div class="form-group">
+                    <label>📝 الوصف (اختياري)</label>
+                    <textarea id="description" rows="3" placeholder="أضف وصف للمصروف..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="submit-btn" style="width: 100%; font-size: 1.05rem; padding: 1rem;">
+                    ✅ إضافة المصروف
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE_URL = "http://localhost:8000";
+        const token = localStorage.getItem('token');
+
+        if (!token) window.location.href = 'login.html';
+
+        // Set today's date as default
+        document.getElementById('date').valueAsDate = new Date();
+
+        // Prevent 'e', '+', '-' in amount field
+        document.getElementById('amount').addEventListener('keydown', (e) => {
+            if (['e', 'E', '+', '-'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // Show toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast toast-${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        async function loadCategories() {
+            const res = await fetch(`${API_BASE_URL}/categories/`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const categories = await res.json();
+            const select = document.getElementById('category');
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat._id;
+                opt.textContent = `${cat.icon} ${cat.name}`;
+                select.appendChild(opt);
+            });
+        }
+
+        document.getElementById('add-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submit-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ جاري الإضافة...';
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.7';
+
+            const data = {
+                amount: parseFloat(document.getElementById('amount').value),
+                currency: document.getElementById('currency').value,
+                category_id: document.getElementById('category').value,
+                date: new Date(document.getElementById('date').value).toISOString(),
+                description: document.getElementById('description').value
+            };
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/expenses/`, {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    showToast('✅ تمت إضافة المصروف بنجاح!', 'success');
+                    btn.innerHTML = '✅ تمت الإضافة!';
+                    btn.style.background = 'linear-gradient(135deg, #34d399, #10b981)';
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1200);
+                } else {
+                    throw new Error('Failed');
+                }
+            } catch (err) {
+                showToast('❌ حدث خطأ أثناء إضافة المصروف', 'error');
+                btn.innerHTML = originalText;
+                btn.style.pointerEvents = 'auto';
+                btn.style.opacity = '1';
+            }
+        });
+
+        loadCategories();
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        }
+    </script>
+</body>
+</html>

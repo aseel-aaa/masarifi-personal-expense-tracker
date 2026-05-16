@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم - مصاريفي</title>
+    <meta name="description" content="لوحة تحكم مصاريفي - نظرة شاملة على مصاريفك">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span>💰</span>
+            <span>مصاريفي</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html" class="active">📊 لوحة التحكم</a></li>
+            <li><a href="list.html">📋 المصاريف</a></li>
+            <li><a href="add.html">➕ إضافة مصروف</a></li>
+            <li><a href="reports.html">📈 التقارير</a></li>
+            <li style="margin-top: auto;"><a href="#" onclick="logout()">🚪 تسجيل الخروج</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <header style="margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1 id="welcome-msg" style="margin-bottom: 0.25rem;">لوحة التحكم</h1>
+                <p style="color: var(--text-muted); font-size: 0.95rem;">نظرة عامة على مصاريفك</p>
+            </div>
+            <div id="user-info" style="font-weight: 600; color: var(--text-muted); background: var(--gradient-card); padding: 0.6rem 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--card-border);"></div>
+        </header>
+
+        <div class="grid" id="stats-grid">
+            <div class="card stats-card">
+                <span class="stats-label">💸 إجمالي المصاريف هذا الشهر</span>
+                <span class="stats-value" id="month-total">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+            </div>
+            <div class="card stats-card">
+                <span class="stats-label">📝 عدد المصاريف هذا الشهر</span>
+                <span class="stats-value" id="month-count">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+            </div>
+            <div class="card stats-card">
+                <span class="stats-label">📌 أعلى فئة إنفاقاً</span>
+                <span class="stats-value" id="top-category" style="font-size: 1.4rem;">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 0;">المصاريف الأخيرة</h3>
+                <a href="list.html" style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600; transition: all 0.3s;">عرض الكل ←</a>
+            </div>
+            <div id="recent-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>الفئة</th>
+                            <th>الوصف</th>
+                            <th>المبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-expenses">
+                        <tr><td colspan="4">
+                            <div class="skeleton skeleton-text" style="width: 100%;"></div>
+                            <div class="skeleton skeleton-text" style="width: 80%; margin-top: 12px;"></div>
+                            <div class="skeleton skeleton-text" style="width: 90%; margin-top: 12px;"></div>
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="empty-state" style="display: none;">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>لا توجد مصاريف بعد</p>
+                    <a href="add.html" class="btn btn-primary">➕ أضف أول مصروف</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE_URL = "http://localhost:8000";
+        const token = localStorage.getItem('token');
+
+        if (!token) {
+            window.location.href = 'login.html';
+        }
+
+        // Animate counter
+        function animateCounter(element, target, prefix = '', suffix = '') {
+            let current = 0;
+            const duration = 1200;
+            const steps = 40;
+            const increment = target / steps;
+            const stepTime = duration / steps;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= target) {
+                    current = target;
+                    clearInterval(timer);
+                }
+                element.textContent = prefix + (Number.isInteger(target) ? Math.floor(current) : current.toFixed(2)) + suffix;
+            }, stepTime);
+        }
+
+        async function fetchData() {
+            try {
+                // Fetch user info
+                const userRes = await fetch(`${API_BASE_URL}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!userRes.ok) throw new Error('Unauthorized');
+                const user = await userRes.json();
+                document.getElementById('user-info').innerText = user.name;
+                document.getElementById('welcome-msg').innerText = `أهلاً، ${user.name.split(' ')[0]} 👋`;
+
+                // Fetch stats
+                const statsRes = await fetch(`${API_BASE_URL}/expenses/stats`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const stats = await statsRes.json();
+                
+                // Month total with animation
+                const totalsContainer = document.getElementById('month-total');
+                const totals = Object.entries(stats.month_totals);
+                if (totals.length === 0) {
+                    totalsContainer.innerHTML = `<span class="amount-display">0.00</span>`;
+                } else {
+                    totalsContainer.innerHTML = totals
+                        .map(([curr, total]) => `<div class="amount-display">${total.toFixed(2)} <span class="currency">${curr}</span></div>`)
+                        .join('');
+                }
+
+                // Month count
+                const countEl = document.getElementById('month-count');
+                const totalCount = stats.recent_expenses ? stats.recent_expenses.length : 0;
+                animateCounter(countEl, totalCount);
+
+                // Top category
+                const topCatEl = document.getElementById('top-category');
+                if (stats.recent_expenses && stats.recent_expenses.length > 0) {
+                    const catCounts = {};
+                    stats.recent_expenses.forEach(exp => {
+                        const name = exp.category_name || 'أخرى';
+                        catCounts[name] = (catCounts[name] || 0) + exp.amount;
+                    });
+                    const topCat = Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0];
+                    topCatEl.innerHTML = `<span class="badge badge-category">${topCat[0]}</span>`;
+                } else {
+                    topCatEl.textContent = '—';
+                }
+
+                // Render recent expenses
+                const tbody = document.getElementById('recent-expenses');
+                if (stats.recent_expenses.length === 0) {
+                    document.getElementById('recent-container').style.display = 'none';
+                    document.getElementById('empty-state').style.display = 'block';
+                } else {
+                    tbody.innerHTML = stats.recent_expenses.map((exp, i) => `
+                        <tr style="animation-delay: ${i * 0.06}s;">
+                            <td>${new Date(exp.date).toLocaleDateString('ar-SA')}</td>
+                            <td><span class="badge badge-category">${exp.category_icon || '📁'} ${exp.category_name || 'غير محدد'}</span></td>
+                            <td style="color: var(--text-muted);">${exp.description || '—'}</td>
+                            <td><span class="amount-display">${exp.amount.toFixed(2)} <span class="currency">${exp.currency || 'USD'}</span></span></td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error(err);
+                logout();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        }
+
+        fetchData();
+    </script>
+</body>
+</html>

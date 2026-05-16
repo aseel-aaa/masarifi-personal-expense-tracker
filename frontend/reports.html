@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>التقارير - مصاريفي</title>
+    <meta name="description" content="تقارير ورسوم بيانية تفصيلية لمصاريفك">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span>💰</span>
+            <span>مصاريفي</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="index.html">📊 لوحة التحكم</a></li>
+            <li><a href="list.html">📋 المصاريف</a></li>
+            <li><a href="add.html">➕ إضافة مصروف</a></li>
+            <li><a href="reports.html" class="active">📈 التقارير</a></li>
+            <li style="margin-top: auto;"><a href="#" onclick="logout()">🚪 تسجيل الخروج</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <div style="margin-bottom: 2.5rem;">
+            <h1 style="margin-bottom: 0.25rem;">تقارير المصاريف 📈</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">تحليل شامل لنفقاتك</p>
+        </div>
+        
+        <!-- Summary Cards -->
+        <div class="grid" style="margin-bottom: 2rem;" id="summary-cards">
+            <div class="card stats-card">
+                <span class="stats-label">🏆 أعلى فئة إنفاقاً</span>
+                <span class="stats-value" id="top-cat-name" style="font-size: 1.3rem;">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+                <span style="color: var(--text-muted); font-size: 0.9rem;" id="top-cat-amount"></span>
+            </div>
+            <div class="card stats-card">
+                <span class="stats-label">📊 إجمالي الفئات</span>
+                <span class="stats-value" id="total-categories">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+            </div>
+            <div class="card stats-card">
+                <span class="stats-label">💰 إجمالي الإنفاق</span>
+                <span class="stats-value" id="total-spending">
+                    <div class="skeleton skeleton-value"></div>
+                </span>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid">
+            <div class="card">
+                <h3 style="text-align: center;">🍩 الإنفاق حسب الفئة</h3>
+                <div class="chart-container">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3 style="text-align: center;">📊 مقارنة الفئات</h3>
+                <div class="chart-container">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Breakdown -->
+        <div class="card" style="margin-top: 2rem;" id="breakdown-card">
+            <h3>📋 تفاصيل الفئات</h3>
+            <div id="category-breakdown"></div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" style="display: none;">
+            <div class="card">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <p>لا توجد بيانات كافية للتقارير</p>
+                    <a href="add.html" class="btn btn-primary">➕ أضف مصاريف لعرض التقارير</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE_URL = "http://localhost:8000";
+        const token = localStorage.getItem('token');
+
+        if (!token) window.location.href = 'login.html';
+
+        // Chart.js global defaults for dark theme
+        Chart.defaults.color = '#8888a8';
+        Chart.defaults.font.family = "'Tajawal', sans-serif";
+
+        const chartColors = [
+            '#818cf8', '#c084fc', '#34d399', '#fbbf24', '#f87171', 
+            '#ec4899', '#06b6d4', '#14b8a6', '#a78bfa', '#fb923c',
+            '#2dd4bf', '#e879f9'
+        ];
+
+        const chartColorsAlpha = chartColors.map(c => c + '33');
+
+        // Animate counter
+        function animateCounter(element, target, suffix = '') {
+            let current = 0;
+            const duration = 1000;
+            const steps = 30;
+            const increment = target / steps;
+            const stepTime = duration / steps;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= target) {
+                    current = target;
+                    clearInterval(timer);
+                }
+                element.textContent = (Number.isInteger(target) ? Math.floor(current) : current.toFixed(2)) + suffix;
+            }, stepTime);
+        }
+
+        async function loadCharts() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/expenses/reports/category`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                
+                if (!data || data.length === 0) {
+                    document.getElementById('summary-cards').style.display = 'none';
+                    document.getElementById('breakdown-card').style.display = 'none';
+                    document.getElementById('empty-state').style.display = 'block';
+                    // Hide chart cards
+                    document.querySelectorAll('.grid')[1].style.display = 'none';
+                    return;
+                }
+
+                const sortedData = [...data].sort((a, b) => b.total - a.total);
+                const topCat = sortedData[0];
+                const totalSpending = data.reduce((sum, d) => sum + d.total, 0);
+
+                // Summary cards
+                document.getElementById('top-cat-name').innerHTML = `<span class="badge badge-category">${topCat.category}</span>`;
+                document.getElementById('top-cat-amount').textContent = topCat.total.toFixed(2);
+                
+                animateCounter(document.getElementById('total-categories'), data.length);
+                animateCounter(document.getElementById('total-spending'), totalSpending);
+
+                // Category breakdown bars
+                const breakdownEl = document.getElementById('category-breakdown');
+                breakdownEl.innerHTML = sortedData.map((item, i) => {
+                    const percentage = ((item.total / totalSpending) * 100).toFixed(1);
+                    return `
+                        <div style="margin-bottom: 1.25rem; animation: fadeInUp 0.4s ease-out both; animation-delay: ${i * 0.08}s;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <span style="font-weight: 600;">${item.category}</span>
+                                <span class="amount-display" style="font-size: 0.95rem;">${item.total.toFixed(2)} <span class="currency">${percentage}%</span></span>
+                            </div>
+                            <div style="height: 8px; background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden;">
+                                <div style="height: 100%; width: 0; background: ${chartColors[i % chartColors.length]}; border-radius: 10px; transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 12px ${chartColors[i % chartColors.length]}44;" data-width="${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // Animate progress bars after render
+                setTimeout(() => {
+                    document.querySelectorAll('[data-width]').forEach(bar => {
+                        bar.style.width = bar.dataset.width;
+                    });
+                }, 200);
+
+                // Doughnut Chart
+                const ctx1 = document.getElementById('categoryChart').getContext('2d');
+                new Chart(ctx1, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.map(item => item.category),
+                        datasets: [{
+                            data: data.map(item => item.total),
+                            backgroundColor: chartColors.slice(0, data.length),
+                            borderWidth: 0,
+                            hoverOffset: 15,
+                            borderRadius: 4,
+                            spacing: 3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '72%',
+                        plugins: {
+                            legend: { 
+                                position: 'bottom',
+                                labels: {
+                                    padding: 16,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle',
+                                    font: { 
+                                        family: "'Tajawal', sans-serif",
+                                        size: 12,
+                                        weight: '600'
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 15, 30, 0.95)',
+                                padding: 14,
+                                cornerRadius: 10,
+                                titleFont: { family: "'Tajawal', sans-serif", weight: '700' },
+                                bodyFont: { family: "'Tajawal', sans-serif" },
+                                borderColor: 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                displayColors: true,
+                                boxPadding: 6,
+                                callbacks: {
+                                    label: (ctx) => ` ${ctx.label}: ${ctx.parsed.toFixed(2)}`
+                                }
+                            }
+                        },
+                        animation: {
+                            animateScale: true,
+                            animateRotate: true,
+                            duration: 1200,
+                            easing: 'easeOutQuart'
+                        }
+                    }
+                });
+
+                // Bar Chart
+                const ctx2 = document.getElementById('barChart').getContext('2d');
+                new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: sortedData.map(item => item.category),
+                        datasets: [{
+                            label: 'المبلغ',
+                            data: sortedData.map(item => item.total),
+                            backgroundColor: chartColors.slice(0, sortedData.length).map(c => c + '55'),
+                            borderColor: chartColors.slice(0, sortedData.length),
+                            borderWidth: 2,
+                            borderRadius: 8,
+                            borderSkipped: false,
+                            barThickness: 40,
+                            maxBarThickness: 50
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 15, 30, 0.95)',
+                                padding: 14,
+                                cornerRadius: 10,
+                                titleFont: { family: "'Tajawal', sans-serif", weight: '700' },
+                                bodyFont: { family: "'Tajawal', sans-serif" },
+                                borderColor: 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                callbacks: {
+                                    label: (ctx) => ` المبلغ: ${ctx.parsed.x.toFixed(2)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { 
+                                    color: 'rgba(255,255,255,0.04)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    font: { family: "'Tajawal', sans-serif" }
+                                }
+                            },
+                            y: {
+                                grid: { display: false },
+                                ticks: {
+                                    font: { 
+                                        family: "'Tajawal', sans-serif",
+                                        weight: '600'
+                                    }
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 1500,
+                            easing: 'easeOutQuart'
+                        }
+                    }
+                });
+
+            } catch(err) {
+                console.error(err);
+            }
+        }
+
+        loadCharts();
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = 'login.html';
+        }
+    </script>
+</body>
+</html>
